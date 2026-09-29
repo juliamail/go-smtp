@@ -653,7 +653,7 @@ func (c *Conn) handleRcpt(arg string) error {
 	}
 
 	p := parse.Parser{S: strings.TrimSpace(arg)}
-	recipient, err := p.Path()
+	recipient, err := p.ForwardPath()
 	if err != nil {
 		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:<address>")
 	}
@@ -920,11 +920,22 @@ func (c *Conn) handleData(arg string) error {
 	uuid, err := c.session.Data(c.ctx, rstart)
 	if err != nil {
 		// an error which isn't a smtp status error will always terminate the connection
+		smtpErr, ok := err.(*smtp.Status)
+		if !ok {
+			return err
+		}
+
 		// if it is an smtp status then we need to make sure the stream ist read to the end
-		if _, ok := err.(*smtp.Status); ok && r != nil {
+		if r != nil {
 			_, _ = io.Copy(io.Discard, r)
 		}
-		return err
+
+		// the transaction ends with this reply as it does with an acceptance,
+		// RFC 5321 4.1.1.4, so the client may start the next one right away
+		if err = c.reset(); err != nil {
+			return err
+		}
+		return smtpErr
 	}
 
 	// Make sure all the data has been consumed

@@ -864,6 +864,51 @@ func TestServer_LFDotLF(t *testing.T) {
 	}
 }
 
+func TestServer_RcptPostmaster(t *testing.T) {
+	be, s, c, scanner := testServerAuthenticated(t, nil)
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid MAIL response:", scanner.Text())
+	}
+
+	_, _ = io.WriteString(c, "RCPT TO:<PostMaster>\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid RCPT response:", scanner.Text())
+	}
+
+	_, _ = io.WriteString(c, "RCPT TO:<post master>\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "501 ") {
+		t.Fatal("Invalid RCPT response:", scanner.Text())
+	}
+
+	_, _ = io.WriteString(c, "DATA\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "354 ") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+
+	_, _ = io.WriteString(c, "From: root@nsa.gov\r\n\r\nhey\r\n.\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+
+	if len(be.messages) != 1 {
+		t.Fatal("Invalid number of sent messages:", be.messages)
+	}
+	if to := be.messages[0].To; len(to) != 1 || to[0] != "postmaster" {
+		t.Fatal("Invalid recipients:", to)
+	}
+}
+
 func TestServer_EmptyMessage(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil)
 	defer func() {
@@ -1455,6 +1500,55 @@ func TestServer_Chunking_ClosedInTheMiddle(t *testing.T) {
 
 	if err := <-be.dataErrors; err != smtp.ErrConnection {
 		t.Fatal("Backend received a different error:", err)
+	}
+}
+
+func TestServer_DataErrorEndsTheTransaction(t *testing.T) {
+	be, s, c, scanner := testServerAuthenticated(t, nil)
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	be.dataErr = smtp.NewStatusS(554, smtp.EnhancedCode{5, 6, 0}, "content rejected")
+
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	scanOk(t, c, scanner)
+	_, _ = io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\n")
+	scanOk(t, c, scanner)
+	_, _ = io.WriteString(c, "DATA\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "554 5.6.0 content rejected") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+
+	// the next transaction starts without a RSET, and without the recipients of
+	// the refused one
+	be.dataErr = nil
+
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid MAIL response:", scanner.Text())
+	}
+	_, _ = io.WriteString(c, "RCPT TO:<root@bnd.bund.de>\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid RCPT response:", scanner.Text())
+	}
+	_, _ = io.WriteString(c, "DATA\r\n")
+	scanOk(t, c, scanner)
+	_, _ = io.WriteString(c, "Hey <3\r\n.\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+
+	if len(be.messages) != 1 {
+		t.Fatal("Invalid number of sent messages:", be.messages)
+	}
+	if to := be.messages[0].To; len(to) != 1 || to[0] != "root@bnd.bund.de" {
+		t.Fatal("Invalid recipients:", to)
 	}
 }
 

@@ -141,6 +141,23 @@ func (p *Parser) ReversePath() (string, error) {
 	return p.Path()
 }
 
+// postmasterPath is the recipient RFC 5321 4.1.1.3 lets a client name without a
+// domain, because every server has to accept mail for it.
+const postmasterPath = "<postmaster>"
+
+// ForwardPath parses the argument of a RCPT command: a path, or the mailbox
+// postmaster without a domain, matched case-insensitively and returned as
+// "postmaster".
+func (p *Parser) ForwardPath() (string, error) {
+	if len(p.S) >= len(postmasterPath) && strings.EqualFold(p.S[:len(postmasterPath)], postmasterPath) {
+		// remove leading whitespace after the forward-path
+		p.S, _ = strings.CutPrefix(p.S[len(postmasterPath):], " ")
+		return "postmaster", nil
+	}
+
+	return p.Path()
+}
+
 // Path parses a recipient.
 func (p *Parser) Path() (string, error) {
 	hasBracket := p.acceptByte('<')

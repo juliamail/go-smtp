@@ -41,19 +41,19 @@ var NoEnhancedCode = EnhancedCode{0, 0, 0}
 
 // ToPart returns the part of the string after the code
 // which is defined by the enhanced code with the trailing whitespace.
-// E.g. "5.1.1 "
+// E.g. "5.1.1 ", or "5.7.23 ": RFC 3463 allows up to three digits for
+// the subject and for the detail, so every part is written in full.
 func (enhCode EnhancedCode) ToPart() []byte {
 	if enhCode == NoEnhancedCode {
 		return nil
 	}
-	return []byte{
-		strconv.Itoa(enhCode[0])[0],
-		'.',
-		strconv.Itoa(enhCode[1])[0],
-		'.',
-		strconv.Itoa(enhCode[2])[0],
-		' ',
-	}
+	part := make([]byte, 0, len("5.999.999 "))
+	part = strconv.AppendInt(part, int64(enhCode[0]), 10)
+	part = append(part, '.')
+	part = strconv.AppendInt(part, int64(enhCode[1]), 10)
+	part = append(part, '.')
+	part = strconv.AppendInt(part, int64(enhCode[2]), 10)
+	return append(part, ' ')
 }
 
 // NewStatusM creates a new status with multiple message lines.

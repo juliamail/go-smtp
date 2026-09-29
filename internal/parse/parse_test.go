@@ -42,3 +42,40 @@ func TestParser(t *testing.T) {
 		}
 	}
 }
+
+func TestParserForwardPath(t *testing.T) {
+	validForwardPaths := []struct {
+		raw, path, after string
+	}{
+		{"<postmaster>", "postmaster", ""},
+		{"<PostMaster>", "postmaster", ""},
+		{"<POSTMASTER> NOTIFY=NEVER", "postmaster", "NOTIFY=NEVER"},
+		{"<postmaster@example.org>", "postmaster@example.org", ""},
+		{"<root@nsa.gov> NOTIFY=NEVER", "root@nsa.gov", "NOTIFY=NEVER"},
+	}
+	for _, tc := range validForwardPaths {
+		p := Parser{tc.raw}
+		path, err := p.ForwardPath()
+		if err != nil {
+			t.Errorf("parser.ForwardPath(%q) = %v", tc.raw, err)
+		} else if path != tc.path {
+			t.Errorf("parser.ForwardPath(%q) = %q, want %q", tc.raw, path, tc.path)
+		} else if p.S != tc.after {
+			t.Errorf("parser.ForwardPath(%q): got after = %q, want %q", tc.raw, p.S, tc.after)
+		}
+	}
+
+	invalidForwardPaths := []string{
+		"<>",
+		"<postmasters>",
+		"<post master>",
+		"postmaster",
+		"<postmaster",
+	}
+	for _, tc := range invalidForwardPaths {
+		p := Parser{tc}
+		if path, err := p.ForwardPath(); err == nil {
+			t.Errorf("parser.ForwardPath(%q) = %q, want error", tc, path)
+		}
+	}
+}

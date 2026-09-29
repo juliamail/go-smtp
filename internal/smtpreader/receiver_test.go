@@ -186,6 +186,12 @@ var readResponseTests = []readResponseTest{
 		400,
 		"A\nB\nC",
 	},
+
+	{
+		"550-5.7.23 SPF\r\n550 5.7.23 fail\r\n",
+		550,
+		"SPF\nfail",
+	},
 }
 
 // See https://www.ietf.org/rfc/rfc959.txt page 36.
